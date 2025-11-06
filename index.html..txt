@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Nitin Mishra</title>
+  <style>
+    :root{--accent:#d32f2f;--bg:#f6f7fb}
+    body{font-family:Inter,system-ui,Arial;margin:0;background:var(--bg);color:#111}
+    .app{max-width:980px;margin:18px auto;padding:18px}
+    header{display:flex;align-items:center;gap:12px}
+    header h1{margin:0;font-size:20px}
+    .controls{display:grid;grid-template-columns:1fr 320px;gap:16px;margin-top:14px}
+    .panel{background:#fff;border-radius:12px;padding:12px;box-shadow:0 6px 18px rgba(12,20,40,0.06)}
+    .canvas-wrap{position:relative;border:2px dashed #e4e7ef;border-radius:8px;padding:10px;display:flex;justify-content:center;align-items:center;min-height:520px}
+    canvas{background:#fff;max-width:100%;height:auto;border-radius:6px}
+    label{display:block;font-size:13px;margin:8px 0 6px}
+    input[type=text], input[type=url], select{width:100%;padding:8px;border:1px solid #ddd;border-radius:6px}
+    .row{display:flex;gap:8px}
+    .small{font-size:12px;color:#555}
+    button{background:var(--accent);color:#fff;border:none;padding:10px 12px;border-radius:8px;cursor:pointer}
+    .muted{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+    .thumbs{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+    .thumbs img{width:90px;height:90px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid transparent}
+    .thumbs img.active{border-color:var(--accent)}
+    .footer-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .hint{font-size:12px;color:#666;margin-top:6px}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <!-- NM icon: red background, white letters -->
+    <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><rect rx='12' width='64' height='64' fill='%23d32f2f'/><text x='50%' y='58%' font-size='26' fill='white' text-anchor='middle' font-family='Arial' font-weight='700'>NM</text></svg>" alt="NM" style="width:56px;height:56px;border-radius:10px">
+    <div>
+      <h1>Nitin Mishra</h1>
+      <div class="small">Upload a post, add footer text/logo, position & download — share via link.</div>
+    </div>
+  </header>
+
+  <div class="controls">
+    <div class="panel">
+      <label>1) Choose background / post image</label>
+      <div class="row">
+        <input type="file" id="bgFile" accept="image/*">
+        <button id="useUrlBtn" class="muted">Use URL</button>
+      </div>
+      <input type="url" id="imageUrlInput" placeholder="Paste image URL and press Enter" style="display:none;margin-top:8px">
+      <div class="thumbs" id="thumbs">
+        <!-- sample placeholders - admin can replace or user can upload -->
+      </div>
+
+      <hr style="margin:12px 0">
+
+      <label>2) Footer text</label>
+      <input id="footerText" type="text" placeholder="Enter footer text (name / handle / slogan)">
+      <div class="footer-controls">
+        <div>
+          <label>Font size</label>
+          <input id="fontSize" type="range" min="12" max="72" value="28">
+        </div>
+        <div>
+          <label>Opacity</label>
+          <input id="textOpacity" type="range" min="0" max="100" value="100">
+        </div>
+      </div>
+      <label style="margin-top:8px">Text color</label>
+      <input id="textColor" type="color" value="#FFFFFF">
+
+      <hr style="margin:12px 0">
+      <label>3) Logo (optional)</label>
+      <input type="file" id="logoFile" accept="image/*">
+      <div class="row" style="margin-top:8px">
+        <div style="flex:1">
+          <label>Logo width</label>
+          <input id="logoWidth" type="range" min="40" max="400" value="120">
+        </div>
+        <div style="width:110px">
+          <label>Logo opacity</label>
+          <input id="logoOpacity" type="range" min="0" max="100" value="100">
+        </div>
+      </div>
+
+      <hr style="margin:12px 0">
+      <label>4) Positioning</label>
+      <div class="row" style="align-items:center">
+        <button id="posBottomLeft">BL</button>
+        <button id="posBottomCenter">BC</button>
+        <button id="posBottomRight">BR</button>
+        <button id="posManual" class="muted">Manual (drag)</button>
+      </div>
+
+      <div style="margin-top:12px" class="row">
+        <button id="downloadBtn">Download PNG</button>
+        <button id="shareBtn" class="muted">Share (mobile)</button>
+      </div>
+      <div class="hint">Tip: Long press on the download button on Android to save. For admin daily images, upload images to a shared folder and paste URLs into the app.</div>
+    </div>
+
+    <div class="panel">
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="mainCanvas" width="900" height="900"></canvas>
+      </div>
+      <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
+        <div class="small">Canvas size adjusts to image aspect ratio. Max export width 2000px.</div>
+        <div class="small">Made for Nitin Mishra — free web app</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Simple image + footer + logo editor using HTML canvas
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d', {alpha:true});
+let bgImage = null;
+let logoImage = null;
+let logoState = {x:40,y:600,w:120,h:120,opacity:1};
+let footerState = {text:'',x:40,y:760,size:28,color:'#fff',opacity:1};
+let manualDrag = false;
+let dragging = null; // 'logo' or 'text'
+let dragOffset = {x:0,y:0};
+
+function fitCanvasToImage(img){
+  const maxW = 1000; // internal working size
+  let w = img.width, h = img.height;
+  if(w>maxW){ const ratio = maxW/w; w = maxW; h = Math.round(h*ratio); }
+  canvas.width = w; canvas.height = h;
+}
+
+function draw(){
+  // clear
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // bg
+  if(bgImage){
+    // draw bg to fill canvas
+    ctx.drawImage(bgImage,0,0,canvas.width,canvas.height);
+  } else {
+    ctx.fillStyle = '#f3f4f6'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#999'; ctx.textAlign='center'; ctx.font='18px Arial';
+    ctx.fillText('Upload a post image to begin', canvas.width/2, canvas.height/2);
+  }
+  // logo
+  if(logoImage){
+    ctx.globalAlpha = logoState.opacity;
+    ctx.drawImage(logoImage, logoState.x, logoState.y, logoState.w, logoState.h);
+    ctx.globalAlpha = 1;
+    // border when manual drag
+    if(manualDrag){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(logoState.x, logoState.y, logoState.w, logoState.h); }
+  }
+  // footer text with background shadow for readability
+  if(footerState.text){
+    ctx.globalAlpha = footerState.opacity/100;
+    ctx.font = `${footerState.size}px sans-serif`;
+    ctx.textAlign = 'left';
+    // shadow bar for contrast
+    const padding = 12;
+    const metrics = ctx.measureText(footerState.text);
+    const textW = metrics.width;
+    const barH = footerState.size + padding;
+    // default bottom positions
+    let y = footerState.y;
+    // draw translucent black bar
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(footerState.x - 10, y - footerState.size - 8, textW + 24, barH);
+    // draw text
+    ctx.fillStyle = footerState.color;
+    ctx.fillText(footerState.text, footerState.x, y);
+    ctx.globalAlpha = 1;
+    if(manualDrag){ ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.strokeRect(footerState.x - 10, y - footerState.size - 8, textW + 24, barH); }
+  }
+}
+
+// file inputs
+document.getElementById('bgFile').addEventListener('change', async (e)=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const url = URL.createObjectURL(f);
+  const img = new Image(); img.onload = ()=>{
+    bgImage = img; fitCanvasToImage(img); // reset default positions
+    footerState.x = Math.round(canvas.width*0.05);
+    footerState.y = Math.round(canvas.height - 30);
+    logoState.x = Math.round(canvas.width*0.75);
+    logoState.y = Math.round(canvas.height - logoState.h - 20);
+    draw();
+  }; img.src = url;
+});
+
+// use URL
+const useUrlBtn = document.getElementById('useUrlBtn');
+const urlInput = document.getElementById('imageUrlInput');
+useUrlBtn.addEventListener('click', ()=>{ urlInput.style.display = urlInput.style.display === 'none' ? 'block' : 'none'; urlInput.focus(); });
+urlInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ loadImageFromUrl(urlInput.value); }});
+function loadImageFromUrl(u){ if(!u) return; const img = new Image(); img.crossOrigin='anonymous'; img.onload=()=>{ bgImage=img; fitCanvasToImage(img); footerState.x = Math.round(canvas.width*0.05); footerState.y = Math.round(canvas.height - 30); logoState.x = Math.round(canvas.width*0.75); logoState.y = Math.round(canvas.height - logoState.h - 20); draw(); }; img.onerror=()=>{ alert('Could not load that image. Make sure the URL allows cross-origin access.'); }; img.src=u; }
+
+// footer text
+const footerTextInput = document.getElementById('footerText');
+footerTextInput.addEventListener('input', ()=>{ footerState.text = footerTextInput.value; draw(); });
+// font size
+const fontSize = document.getElementById('fontSize');
+fontSize.addEventListener('input', ()=>{ footerState.size = parseInt(fontSize.value); draw(); });
+// color
+const textColor = document.getElementById('textColor');
+textColor.addEventListener('input', ()=>{ footerState.color = textColor.value; draw(); });
+// opacity
+const textOpacity = document.getElementById('textOpacity');
+textOpacity.addEventListener('input', ()=>{ footerState.opacity = parseInt(textOpacity.value); draw(); });
+
+// logo upload
+document.getElementById('logoFile').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(!f) return; const url = URL.createObjectURL(f);
+  const img = new Image(); img.onload=()=>{ logoImage = img; logoState.w = parseInt(document.getElementById('logoWidth').value); logoState.h = Math.round(img.height * (logoState.w / img.width)); logoState.opacity = document.getElementById('logoOpacity').value/100; logoState.x = Math.max(20, canvas.width - logoState.w - 30); logoState.y = canvas.height - logoState.h - 20; draw(); }; img.src = url;
+});
+// logo size and opacity controls
+document.getElementById('logoWidth').addEventListener('input', (e)=>{
+  const w = parseInt(e.target.value); logoState.w = w; if(logoImage) logoState.h = Math.round(logoImage.height*(w/logoImage.width)); draw();
+});
+document.getElementById('logoOpacity').addEventListener('input', (e)=>{ logoState.opacity = parseInt(e.target.value)/100; draw(); });
+
+// positioning shortcuts
+document.getElementById('posBottomLeft').addEventListener('click', ()=>{ footerState.x = 20; footerState.y = canvas.height - 30; logoState.x = 20; logoState.y = canvas.height - logoState.h - 20; draw(); });
+document.getElementById('posBottomCenter').addEventListener('click', ()=>{ footerState.x = Math.round((canvas.width - ctx.measureText(footerState.text||' ').width)/2); footerState.y = canvas.height - 30; logoState.x = Math.round((canvas.width - logoState.w)/2); logoState.y = canvas.height - logoState.h - 20; draw(); });
+document.getElementById('posBottomRight').addEventListener('click', ()=>{ footerState.x = Math.round(canvas.width - (ctx.measureText(footerState.text||' ').width) - 30); footerState.y = canvas.height - 30; logoState.x = canvas.width - logoState.w - 30; logoState.y = canvas.height - logoState.h - 20; draw(); });
+
+document.getElementById('posManual').addEventListener('click', ()=>{ manualDrag = !manualDrag; document.getElementById('posManual').textContent = manualDrag ? 'Drag: ON' : 'Manual (drag)'; draw(); });
+
+// download
+document.getElementById('downloadBtn').addEventListener('click', ()=>{
+  // create a high-res export (limit width to 2000)
+  const exportW = Math.min(2000, canvas.width);
+  const exportH = Math.round((exportW / canvas.width) * canvas.height);
+  const exportCanvas = document.createElement('canvas'); exportCanvas.width = exportW; exportCanvas.height = exportH;
+  const exCtx = exportCanvas.getContext('2d');
+  // draw bg scaled
+  if(bgImage) exCtx.drawImage(bgImage,0,0,exportW,exportH);
+  // draw logo
+  if(logoImage){ exCtx.globalAlpha = logoState.opacity; const scale = exportW / canvas.width; exCtx.drawImage(logoImage, Math.round(logoState.x*scale), Math.round(logoState.y*scale), Math.round(logoState.w*scale), Math.round(logoState.h*scale)); exCtx.globalAlpha = 1; }
+  // text
+  if(footerState.text){ exCtx.globalAlpha = footerState.opacity/100; exCtx.font = `${Math.round(footerState.size * (exportW / canvas.width))}px sans-serif`; exCtx.fillStyle = footerState.color; exCtx.textAlign='left'; const scale=exportW/canvas.width; const x = Math.round(footerState.x*scale); const y = Math.round(footerState.y*scale); const metrics = exCtx.measureText(footerState.text); // draw background bar
+    exCtx.fillStyle = 'rgba(0,0,0,0.45)'; exCtx.fillRect(x-10, y - Math.round(footerState.size*scale) - 8, metrics.width + 24, Math.round(footerState.size*scale) + 12);
+    exCtx.fillStyle = footerState.color; exCtx.fillText(footerState.text, x, y);
+    exCtx.globalAlpha = 1;
+  }
+  const data = exportCanvas.toDataURL('image/png');
+  const a = document.createElement('a'); a.href = data; a.download = 'post-with-footer.png'; document.body.appendChild(a); a.click(); a.remove();
+});
+
+// share
+document.getElementById('shareBtn').addEventListener('click', async ()=>{
+  try{
+    const blob = await new Promise(res=>canvas.toBlob(res,'image/png'));
+    const filesArray = [new File([blob], 'post.png', { type: 'image/png' })];
+    if(navigator.canShare && navigator.canShare({files: filesArray})){ navigator.share({files: filesArray, title:'Post', text:'Post with footer'}); }
+    else{ alert('Share not supported on this device. Use Download to save the image.'); }
+  }catch(e){ alert('Share failed: '+e.message); }
+});
+
+// simple drag handlers on canvas for manual repositioning
+canvas.addEventListener('pointerdown',(e)=>{
+  if(!manualDrag) return; const rect = canvas.getBoundingClientRect(); const x = (e.clientX - rect.left) * (canvas.width/rect.width); const y = (e.clientY - rect.top) * (canvas.height/rect.height);
+  // check logo hit
+  if(logoImage && x>=logoState.x && x<=logoState.x+logoState.w && y>=logoState.y && y<=logoState.y+logoState.h){ dragging='logo'; dragOffset.x = x - logoState.x; dragOffset.y = y - logoState.y; }
+  else if(footerState.text){ ctx.font = `${footerState.size}px sans-serif`; const w = ctx.measureText(footerState.text).width; const h = footerState.size + 12; const fx = footerState.x - 10; const fy = footerState.y - footerState.size - 8; if(x>=fx && x<=fx+w+24 && y>=fy && y<=fy+h){ dragging='text'; dragOffset.x = x - footerState.x; dragOffset.y = y - footerState.y; }}
+});
+canvas.addEventListener('pointermove',(e)=>{ if(!manualDrag || !dragging) return; const rect = canvas.getBoundingClientRect(); const x = (e.clientX - rect.left) * (canvas.width/rect.width); const y = (e.clientY - rect.top) * (canvas.height/rect.height);
+  if(dragging==='logo'){ logoState.x = Math.max(0, Math.min(canvas.width - logoState.w, Math.round(x - dragOffset.x))); logoState.y = Math.max(0, Math.min(canvas.height - logoState.h, Math.round(y - dragOffset.y))); }
+  else if(dragging==='text'){ footerState.x = Math.max(0, Math.min(canvas.width - 30, Math.round(x - dragOffset.x))); footerState.y = Math.max(footerState.size, Math.min(canvas.height - 4, Math.round(y - dragOffset.y))); }
+  draw();
+});
+canvas.addEventListener('pointerup',()=>{ dragging=null; });
+canvas.addEventListener('pointercancel',()=>{ dragging=null; });
+
+// small helper to preload few sample images (admin can overwrite)
+const sampleUrls = [
+  'https://images.unsplash.com/photo-1504198453319-5ce911bafcde?q=80&w=1600&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1600&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d?q=80&w=1600&auto=format&fit=crop'
+];
+const thumbs = document.getElementById('thumbs');
+sampleUrls.forEach((u,i)=>{
+  const img = document.createElement('img'); img.src=u; img.addEventListener('click',()=>{ loadImageFromUrl(u); document.querySelectorAll('#thumbs img').forEach(x=>x.classList.remove('active')); img.classList.add('active'); }); thumbs.appendChild(img);
+});
+
+// initial draw
+fitCanvasToImage({width:900,height:900}); draw();
+</script>
+</body>
+</html>
